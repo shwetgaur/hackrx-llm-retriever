@@ -1,0 +1,13 @@
+langchain
+langchain_community
+langchain_google_genai
+langchainhub
+langchain_openai
+fastapi
+uvicorn
+python-dotenv
+unstructured[pdf]
+pypdf
+sentence-transformers
+faiss-cpu
+rank_bm25 

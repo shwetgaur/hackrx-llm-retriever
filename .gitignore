@@ -1,0 +1,17 @@
+# Virtual Environment
+venv/
+.venv/
+
+# Environment variables
+.env
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Generated database and models
+faiss_index/
+embedding_model/
+
+# VS Code settings
+.vscode/
