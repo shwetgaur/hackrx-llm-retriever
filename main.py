@@ -21,7 +21,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 load_dotenv()
 
 # --- Configuration ---
-EMBEDDING_MODEL = "./embedding_model"
+EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 LLM_MODEL = "gemini-1.5-pro-latest"
 HACKATHON_API_KEY = os.getenv("HACKATHON_API_KEY")
 
