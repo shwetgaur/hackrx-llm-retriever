@@ -1,149 +1,125 @@
 import os
 import json
+import requests
+import tempfile
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
+from fastapi import FastAPI, Depends, HTTPException, Security
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from pydantic import BaseModel, Field, HttpUrl
 
-# Core LangChain imports
-from langchain.chains import RetrievalQA, LLMChain
-from langchain.prompts import PromptTemplate
+# LangChain Imports
+from langchain.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.runnables import RunnablePassthrough
+from langchain_community.document_loaders import UnstructuredPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.output_parsers import PydanticOutputParser
-
-# Community and other necessary imports
-from langchain_community.document_loaders import DirectoryLoader
 from langchain_community.vectorstores import FAISS
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_community.retrievers import BM25Retriever
-from langchain.retrievers import EnsembleRetriever, ContextualCompressionRetriever
-from langchain.retrievers.document_compressors import CrossEncoderReranker
-from langchain_community.cross_encoders import HuggingFaceCrossEncoder
-
 
 # Load environment variables
 load_dotenv()
 
 # --- Configuration ---
-DOCS_PATH = "./docs"
-DB_FAISS_PATH = "faiss_index"
 EMBEDDING_MODEL = "./embedding_model"
 LLM_MODEL = "gemini-1.5-pro-latest"
-RERANKER_MODEL = 'cross-encoder/ms-marco-MiniLM-L-6-v2'
+HACKATHON_API_KEY = os.getenv("HACKATHON_API_KEY")
+
+# --- Security ---
+security_scheme = HTTPBearer()
+
+def get_current_user(credentials: HTTPAuthorizationCredentials = Security(security_scheme)):
+    """Validates the bearer token."""
+    if credentials.scheme != "Bearer" or credentials.credentials != HACKATHON_API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+    return True
+
+# --- Pydantic Models for API ---
+class HackathonRequest(BaseModel):
+    documents: HttpUrl
+    questions: list[str]
+
+class HackathonResponse(BaseModel):
+    answers: list[str]
 
 # --- FastAPI Application ---
-app = FastAPI(title="Optimized Insurance QA System")
+app = FastAPI(title="HackRx 6.0 Submission API")
 
-# --- Pydantic Models ---
-class QueryRequest(BaseModel):
-    text: str
+# --- Core RAG Logic ---
+llm = ChatGoogleGenerativeAI(model=LLM_MODEL, temperature=0, convert_system_message_to_human=True)
+embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL, model_kwargs={'device': 'cpu'})
 
-class QueryResponse(BaseModel):
-    decision: str
-    amount: int
-    justification: list[str]
+qa_prompt_template = """
+You are an expert AI assistant for answering questions about insurance policies.
+Answer the question based ONLY on the provided context.
+If the information is not in the context, say "Information not found in the provided document."
 
-class TransformedQuery(BaseModel):
-    search_query: str = Field(description="An optimized search query combining the original query and new keywords.")
+CONTEXT:
+{context}
 
-# Global variables for our chains
-qa_chain = None
-query_transformer_chain = None
+QUESTION:
+{question}
 
-@app.on_event("startup")
-def startup_event():
-    """Initializes all components of the advanced RAG pipeline."""
-    global qa_chain, query_transformer_chain
-    print("Initializing Optimized RAG pipeline...")
+ANSWER:
+"""
+qa_prompt = ChatPromptTemplate.from_template(qa_prompt_template)
 
-    # --- Setup LLM and a shared retriever ---
-    llm = ChatGoogleGenerativeAI(model=LLM_MODEL, temperature=0, convert_system_message_to_human=True)
-    embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL, model_kwargs={'device': 'cpu'})
-    
-    loader = DirectoryLoader(DOCS_PATH, glob='**/*.pdf')
-    documents = loader.load()
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
-    chunks = text_splitter.split_documents(documents)
-    
-    faiss_vectorstore = FAISS.load_local(DB_FAISS_PATH, embeddings, allow_dangerous_deserialization=True)
-    faiss_retriever = faiss_vectorstore.as_retriever(search_kwargs={'k': 5})
-    
-    bm25_retriever = BM25Retriever.from_documents(chunks)
-    bm25_retriever.k = 5
-    
-    ensemble_retriever = EnsembleRetriever(retrievers=[bm25_retriever, faiss_retriever], weights=[0.5, 0.5])
-    
-    cross_encoder = HuggingFaceCrossEncoder(model_name=RERANKER_MODEL)
-    compressor = CrossEncoderReranker(model=cross_encoder, top_n=3)
-    compression_retriever = ContextualCompressionRetriever(base_compressor=compressor, base_retriever=ensemble_retriever)
-    print("Advanced retriever is ready.")
+def format_docs(docs):
+    return "\n\n".join(doc.page_content for doc in docs)
 
-    # --- 1. SETUP QUERY TRANSFORMER CHAIN ---
-    parser = PydanticOutputParser(pydantic_object=TransformedQuery)
-    transform_prompt_template = """You are a search expert. Your task is to analyze a user's query and transform it into a more effective search query for a document retrieval system.
-    Analyze the user's query for contextual clues like policy duration, location, or specific conditions. Based on these clues, add general keywords that are likely to appear in a policy document.
-    For example:
-    - If you see "3-month policy", add "waiting period" and "exclusions".
-    - If you see a procedure like "knee surgery", add "joint replacement surgery" and "specified disease".
-    Return a JSON object with a single key "search_query" containing the new, optimized query.
-    USER QUERY: {query}
-    {format_instructions}"""
-    prompt = PromptTemplate(template=transform_prompt_template, input_variables=["query"], partial_variables={"format_instructions": parser.get_format_instructions()})
-    query_transformer_chain = LLMChain(llm=llm, prompt=prompt, output_parser=parser)
-    print("Query Transformer chain is ready.")
-
-    # --- 2. SETUP THE MAIN QA CHAIN ---
-    qa_prompt_template = """You are an expert insurance claims adjudicator. Your task is to analyze a user's query based ONLY on the provided policy document context.
-    If the context does not contain the answer, state that the information is not found.
-    CONTEXT: {context}
-    QUERY: {question}
-    INSTRUCTIONS: Your final answer MUST be a single, valid JSON object with the following keys: "decision", "amount", and "justification".
-    - "decision" must be "Approved", "Rejected", or "Information Not Found".
-    - "amount" must be an integer. If not applicable, use 0.
-    - "justification" must be an array of strings, quoting the exact clauses from the context that support your decision.
-    Do not add any text before or after the JSON object.
-    FINAL JSON ANSWER:"""
-    qa_prompt = PromptTemplate(template=qa_prompt_template, input_variables=["context", "question"])
-    
-    qa_chain = RetrievalQA.from_chain_type(
-        llm=llm,
-        chain_type='stuff',
-        retriever=compression_retriever,
-        return_source_documents=False,
-        chain_type_kwargs={'prompt': qa_prompt}
-    )
-    print("Main QA Chain is ready. Application startup complete.")
-
-@app.post("/query", response_model=QueryResponse)
-async def process_query(query: QueryRequest):
-    if not qa_chain or not query_transformer_chain:
-        raise HTTPException(status_code=503, detail="Chains are not initialized.")
-
-    print(f"Original query: {query.text}")
-    
-    # Step 1: Transform the query
+# --- API Endpoint ---
+@app.post("/hackrx/run", response_model=HackathonResponse)
+async def process_documents(request: HackathonRequest, authorized: bool = Depends(get_current_user)):
+    """
+    This endpoint downloads a document, processes it, and answers questions.
+    """
     try:
-        transformed_query_obj = await query_transformer_chain.ainvoke({"query": query.text})
-        search_query = transformed_query_obj['text'].search_query
-        print(f"Transformed query: {search_query}")
-    except Exception as e:
-        print(f"Error during query transformation: {e}. Using original query.")
-        search_query = query.text
+        # 1. Download the document from the URL
+        print(f"Downloading document from {request.documents}")
+        response = requests.get(str(request.documents))
+        response.raise_for_status() # Raise an exception for bad status codes
 
-    # Step 2: Run the main QA chain with the better query
-    result = qa_chain.invoke(search_query)
-    
-    try:
-        response_str = result.get('result', '{}')
-        json_start = response_str.find('{')
-        json_end = response_str.rfind('}') + 1
-        clean_json_str = response_str[json_start:json_end]
-        response_data = json.loads(clean_json_str)
-        return QueryResponse(**response_data)
+        # Save PDF to a temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+            tmp_file.write(response.content)
+            tmp_file_path = tmp_file.name
+        
+        # 2. Build a temporary RAG index in memory for this request
+        print(f"Processing and indexing the document...")
+        loader = UnstructuredPDFLoader(file_path=tmp_file_path)
+        documents = loader.load()
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
+        chunks = text_splitter.split_documents(documents)
+        
+        # Create a FAISS index in memory
+        vectorstore = FAISS.from_documents(chunks, embeddings)
+        retriever = vectorstore.as_retriever()
+
+        # 3. Create the RAG chain for this request
+        rag_chain = (
+            {"context": retriever | format_docs, "question": RunnablePassthrough()}
+            | qa_prompt
+            | llm
+            | StrOutputParser()
+        )
+        print("RAG chain created for this request.")
+
+        # 4. Loop through questions and get answers
+        answers = []
+        for question in request.questions:
+            print(f"Answering question: {question}")
+            answer = rag_chain.invoke(question)
+            answers.append(answer)
+
+        # Clean up the temporary file
+        os.unlink(tmp_file_path)
+
+        return HackathonResponse(answers=answers)
+
     except Exception as e:
-        print(f"Error parsing LLM response: {e}\nRaw response: {result.get('result')}")
-        raise HTTPException(status_code=500, detail="Failed to get a valid JSON response from the language model.")
+        print(f"An error occurred: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/")
 def read_root():
-    return {"message": "Welcome! Go to /docs to test the Optimized RAG endpoint."}
+    return {"message": "HackRx 6.0 API is running."}
