@@ -1,0 +1,19 @@
+# Git and VS Code
+.git
+.gitignore
+.vscode/
+
+# Virtual Environment
+venv/
+.venv/
+
+# Python cache
+__pycache__/
+
+# Generated/Downloaded assets not needed in the final image
+faiss_index/
+embedding_model/
+hf_cache/
+
+# Documentation files
+*.md
