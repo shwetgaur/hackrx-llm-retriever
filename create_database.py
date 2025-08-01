@@ -34,9 +34,10 @@ def create_vector_db():
 
     print("Loading embedding model...")
     embeddings = HuggingFaceEmbeddings(
-        model_name=EMBEDDING_MODEL,
-        model_kwargs={'device': 'cpu'}
-    )
+        model_name=EMBEDDING_MODEL, 
+        model_kwargs={'device': 'cpu'},
+        cache_folder='./hf_cache'  # Add this line
+)
 
     print("Creating vector database...")
     db = FAISS.from_documents(chunks, embeddings)

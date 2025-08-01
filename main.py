@@ -47,7 +47,11 @@ app = FastAPI(title="HackRx 6.0 Submission API")
 
 # --- Core RAG Logic ---
 llm = ChatGoogleGenerativeAI(model=LLM_MODEL, temperature=0, convert_system_message_to_human=True)
-embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL, model_kwargs={'device': 'cpu'})
+embeddings = HuggingFaceEmbeddings(
+    model_name=EMBEDDING_MODEL, 
+    model_kwargs={'device': 'cpu'},
+    cache_folder='./hf_cache'  # Add this line
+)
 
 qa_prompt_template = """
 You are an expert AI assistant for answering questions about insurance policies.
