@@ -9,7 +9,7 @@ from langchain_community.vectorstores import FAISS
 # --- Configuration ---
 DOCS_PATH = "./docs" # UPDATED: Path to the documents folder
 DB_FAISS_PATH = "faiss_index"
-EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+EMBEDDING_MODEL = "sentence-transformers/multi-qa-MiniLM-L6-cos-v1"
 
 def create_vector_db():
     if not os.path.exists(DOCS_PATH):
