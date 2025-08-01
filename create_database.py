@@ -6,9 +6,9 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 
-# Define a cache directory path that is guaranteed to be writable
-CACHE_DIR = "/data/huggingface_cache"
-os.makedirs(CACHE_DIR, exist_ok=True) # Ensure the directory exists
+CACHE_DIR = os.path.join(os.getcwd(), "hf_cache")
+os.makedirs(CACHE_DIR, exist_ok=True)
+
 
 # --- Configuration ---
 DOCS_PATH = "./docs" # UPDATED: Path to the documents folder
@@ -40,7 +40,7 @@ def create_vector_db():
     embeddings = HuggingFaceEmbeddings(
         model_name=EMBEDDING_MODEL, 
         model_kwargs={'device': 'cpu'},
-        cache_folder=CACHE_DIR  # UPDATED: Use the new writable path
+        cache_folder=CACHE_DIR  # Use the new, guaranteed-to-be-writable path
     )
 
     print("Creating vector database...")
