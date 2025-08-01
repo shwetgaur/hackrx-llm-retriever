@@ -41,7 +41,7 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Security(securi
 
 # --- Pydantic Models for API ---
 class HackathonRequest(BaseModel):
-    documents: HttpUrl
+    documents: str
     questions: list[str]
 
 class HackathonResponse(BaseModel):
