@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Depends, HTTPException, Security
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field, HttpUrl
+from urllib.parse import unquote
 
 # LangChain Imports
 from langchain.prompts import ChatPromptTemplate
@@ -84,9 +85,10 @@ async def process_documents(request: HackathonRequest, authorized: bool = Depend
     """
     try:
         # 1. Download the document from the URL
-        print(f"Downloading document from {request.documents}")
-        response = requests.get(str(request.documents))
-        response.raise_for_status() # Raise an exception for bad status codes
+        # UPDATED: Manually unquote the URL to fix encoding issues
+        decoded_url = unquote(str(request.documents))
+        print(f"Downloading document from (decoded URL): {decoded_url}")
+        response = requests.get(decoded_url)
 
         # Save PDF to a temporary file
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
