@@ -4,6 +4,9 @@ FROM python:3.11-slim
 # Set the working directory in the container
 WORKDIR /code
 
+# UPDATED: Install system dependencies required by opencv-python
+RUN apt-get update && apt-get install -y libgl1-mesa-glx
+
 # Copy the requirements file into the container
 COPY ./requirements.txt /code/requirements.txt
 
