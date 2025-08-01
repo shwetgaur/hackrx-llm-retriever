@@ -20,6 +20,10 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 # Load environment variables
 load_dotenv()
 
+# Define a cache directory path that is guaranteed to be writable
+CACHE_DIR = "/data/huggingface_cache"
+os.makedirs(CACHE_DIR, exist_ok=True) # Ensure the directory exists
+
 # --- Configuration ---
 EMBEDDING_MODEL = "sentence-transformers/multi-qa-MiniLM-L6-cos-v1"
 LLM_MODEL = "gemini-1.5-pro-latest"
@@ -50,7 +54,7 @@ llm = ChatGoogleGenerativeAI(model=LLM_MODEL, temperature=0, convert_system_mess
 embeddings = HuggingFaceEmbeddings(
     model_name=EMBEDDING_MODEL, 
     model_kwargs={'device': 'cpu'},
-    cache_folder='/data/hf_cache'  # UPDATED: The correct persistent path
+    cache_folder=CACHE_DIR  # UPDATED: Use the new writable path
 )
 
 qa_prompt_template = """
