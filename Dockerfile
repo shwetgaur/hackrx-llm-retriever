@@ -5,7 +5,7 @@ FROM python:3.11-slim
 WORKDIR /code
 
 # UPDATED: Install system dependencies required by opencv-python
-RUN apt-get update && apt-get install -y libgl1-mesa-glx
+RUN apt-get update && apt-get install -y libgl1-mesa-glx libglib2.0-0
 
 # Copy the requirements file into the container
 COPY ./requirements.txt /code/requirements.txt
