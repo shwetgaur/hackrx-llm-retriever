@@ -57,7 +57,23 @@ class HackathonResponse(BaseModel):
 app = FastAPI(title="HackRx 6.0 Submission API (Optimized)")
 
 # --- RAG Logic Components ---
-qa_prompt_template = """You are an expert AI assistant... (rest of your prompt)"""
+# UPDATED: Replaced the placeholder with a more robust and specific prompt
+qa_prompt_template = """You are a highly specialized AI assistant for processing insurance claims. Your ONLY function is to answer questions about an insurance policy based on the context provided.
+
+**Instructions:**
+1.  You MUST answer the question using ONLY the provided CONTEXT.
+2.  Do not use any external knowledge or make assumptions.
+3.  If the information to answer the question is not in the CONTEXT, you MUST respond with "Information not found in the provided document."
+4.  Your response must be a direct and concise answer to the user's question, not a conversation.
+
+**CONTEXT:**
+{context}
+
+**QUESTION:**
+{question}
+
+**Final Answer:**
+"""
 qa_prompt = ChatPromptTemplate.from_template(qa_prompt_template)
 
 def format_docs(docs):
@@ -81,13 +97,13 @@ async def process_documents(request: HackathonRequest, authorized: bool = Depend
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
         chunks = text_splitter.split_documents(documents)
 
-        vectorstore = FAISS.from_documents(chunks, embeddings) # Re-uses the globally loaded embeddings
+        vectorstore = FAISS.from_documents(chunks, embeddings)
         retriever = vectorstore.as_retriever()
 
         rag_chain = (
             {"context": retriever | format_docs, "question": RunnablePassthrough()}
             | qa_prompt
-            | llm # Re-uses the globally loaded LLM
+            | llm
             | StrOutputParser()
         )
 
