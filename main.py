@@ -2,10 +2,10 @@ import os
 import requests
 import tempfile
 from dotenv import load_dotenv
-from fastapi import FastAPI, Depends, HTTPException, Security
+from fastapi import FastAPI, Depends, HTTPException, Security, APIRouter
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel, HttpUrl
-from urllib.parse import unquote
+from pydantic import BaseModel
+from urllib.parse import unquote_plus
 
 # LangChain Imports
 from langchain_core.prompts import ChatPromptTemplate
@@ -24,11 +24,11 @@ load_dotenv()
 EMBEDDING_MODEL = "sentence-transformers/multi-qa-MiniLM-L6-cos-v1"
 LLM_MODEL = "gemini-1.5-pro-latest"
 HACKATHON_API_KEY = os.getenv("HACKATHON_API_KEY")
-CACHE_DIR = "/tmp/hf_cache"
+CACHE_DIR = "/tmp/hf_cache" if os.path.exists("/tmp") else "./hf_cache"
 os.makedirs(CACHE_DIR, exist_ok=True)
 
 
-# --- OPTIMIZATION: Initialize heavy models ONCE on startup ---
+# --- Initialize heavy models ONCE on startup ---
 print("Loading AI models on startup...")
 llm = ChatGoogleGenerativeAI(model=LLM_MODEL, temperature=0, convert_system_message_to_human=True)
 embeddings = HuggingFaceEmbeddings(
@@ -53,11 +53,12 @@ class HackathonRequest(BaseModel):
 class HackathonResponse(BaseModel):
     answers: list[str]
 
-# --- FastAPI Application ---
-app = FastAPI(title="HackRx 6.0 Submission API (Optimized)")
+# --- FastAPI Application Setup ---
+app = FastAPI(title="HackRx 6.0 Submission API")
+router = APIRouter(prefix="/api/v1")
 
 # --- RAG Logic Components ---
-# UPDATED: Replaced the placeholder with a more robust and specific prompt
+# UPDATED: The final, robust prompt is now included.
 qa_prompt_template = """You are a highly specialized AI assistant for processing insurance claims. Your ONLY function is to answer questions about an insurance policy based on the context provided.
 
 **Instructions:**
@@ -80,11 +81,12 @@ def format_docs(docs):
     return "\n\n".join(doc.page_content for doc in docs)
 
 # --- API Endpoint ---
-@app.post("/hackrx/run", response_model=HackathonResponse)
+@router.post("/hackrx/run", response_model=HackathonResponse)
 async def process_documents(request: HackathonRequest, authorized: bool = Depends(get_current_user)):
     try:
-        decoded_url = unquote(request.documents)
-        print(f"Downloading document from: {decoded_url}")
+        decoded_url = unquote_plus(request.documents)
+        print(f"Downloading document from (decoded URL): {decoded_url}")
+        
         response = requests.get(decoded_url)
         response.raise_for_status()
 
@@ -117,6 +119,9 @@ async def process_documents(request: HackathonRequest, authorized: bool = Depend
     except Exception as e:
         print(f"An error occurred: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+# Include the router in the main app
+app.include_router(router)
 
 @app.get("/")
 def read_root():
