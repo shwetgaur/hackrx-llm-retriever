@@ -11,7 +11,7 @@ from urllib.parse import unquote_plus
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
-from langchain_community.document_loaders import UnstructuredPDFLoader
+from langchain_community.document_loaders import PyMuPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 from langchain_community.embeddings import HuggingFaceEmbeddings
@@ -24,16 +24,13 @@ load_dotenv()
 EMBEDDING_MODEL = "sentence-transformers/multi-qa-MiniLM-L6-cos-v1"
 LLM_MODEL = "gemini-1.5-pro-latest"
 HACKATHON_API_KEY = os.getenv("HACKATHON_API_KEY")
-CACHE_DIR = "/tmp/hf_cache" if os.path.exists("/tmp") else "./hf_cache"
-os.makedirs(CACHE_DIR, exist_ok=True)
 
 # --- Initialize heavy models ONCE on startup ---
 print("Loading AI models on startup...")
 llm = ChatGoogleGenerativeAI(model=LLM_MODEL, temperature=0, convert_system_message_to_human=True)
 embeddings = HuggingFaceEmbeddings(
     model_name=EMBEDDING_MODEL,
-    model_kwargs={'device': 'cpu'},
-    cache_folder=CACHE_DIR
+    model_kwargs={'device': 'cpu'}
 )
 print("AI models loaded successfully.")
 
@@ -57,17 +54,21 @@ app = FastAPI(title="HackRx 6.0 Submission API (Final Version)")
 router = APIRouter(prefix="/api/v1")
 
 # --- RAG Logic Components ---
-qa_prompt_template = """You are a highly specialized AI assistant for processing insurance claims. Your ONLY function is to answer questions about an insurance policy based on the context provided.
-**Instructions:**
-1. You MUST answer the question using ONLY the provided CONTEXT.
-2. Do not use any external knowledge or make assumptions.
-3. If the information to answer the question is not in the CONTEXT, you MUST respond with "Information not found in the provided document."
-4. Your response must be a direct and concise answer to the user's question, not a conversation.
-**CONTEXT:**
+qa_prompt_template = """
+You are a specialized AI model trained to ONLY answer based on the provided CONTEXT.
+
+**RULES**:
+1. Use only the CONTEXT to answer. Do NOT make assumptions.
+2. If the answer is not found, respond with: Information not found in the provided document.
+3. Be concise and direct. Use complete sentences.
+
+CONTEXT:
 {context}
-**QUESTION:**
+
+QUESTION:
 {question}
-**Final Answer:**
+
+Final Answer:
 """
 qa_prompt = ChatPromptTemplate.from_template(qa_prompt_template)
 
@@ -78,7 +79,6 @@ def format_docs(docs):
 @router.post("/hackrx/run", response_model=HackathonResponse)
 async def process_documents(request: HackathonRequest, authorized: bool = Depends(get_current_user)):
     try:
-        # Use unquote_plus to correctly handle spaces and other special characters
         decoded_url = request.documents  # Do NOT decode it
 
         print(f"Downloading document from (decoded URL): {decoded_url}")
@@ -90,13 +90,13 @@ async def process_documents(request: HackathonRequest, authorized: bool = Depend
             tmp_file.write(response.content)
             tmp_file_path = tmp_file.name
 
-        loader = UnstructuredPDFLoader(file_path=tmp_file_path)
+        loader = PyMuPDFLoader(tmp_file_path)   
         documents = loader.load()
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=600, chunk_overlap=100)
         chunks = text_splitter.split_documents(documents)
 
         vectorstore = FAISS.from_documents(chunks, embeddings)
-        retriever = vectorstore.as_retriever()
+        retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
 
         rag_chain = (
             {"context": retriever | format_docs, "question": RunnablePassthrough()}
