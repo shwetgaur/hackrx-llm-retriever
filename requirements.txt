@@ -1,8 +1,9 @@
-langchain
-langchain_community
+langchain>=0.2.0
+langchain-community>=0.0.20
 langchain_google_genai
 langchainhub
 langchain_openai
+langchain-huggingface
 fastapi
 uvicorn
 python-dotenv
@@ -12,3 +13,4 @@ sentence-transformers
 faiss-cpu
 rank_bm25 
 requests
+PyMuPDF
